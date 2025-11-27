@@ -1,0 +1,43 @@
+# Dockerfile pour Vast.ai avec CUDA Explicite - Spinoza Secours
+# Alternative si le Dockerfile.runpod standard ne fonctionne pas
+# Basé sur Mistral 7B + LoRA avec FastAPI
+
+FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
+
+# Variables d'environnement
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Installer Python 3.10 et dépendances système
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3-pip \
+    python3.10-dev \
+    build-essential \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Créer lien symbolique python
+RUN ln -s /usr/bin/python3.10 /usr/bin/python && \
+    ln -s /usr/bin/python3.10 /usr/bin/python3
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Copier requirements.txt
+COPY requirements.runpod.txt /app/requirements.txt
+
+# Installer les dépendances Python
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copier les fichiers de l'application
+COPY app_runpod.py /app/app.py
+
+# Exposer le port FastAPI
+EXPOSE 8000
+
+# Commande de démarrage
+CMD ["python", "/app/app.py"]
+

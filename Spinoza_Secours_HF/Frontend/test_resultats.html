@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test - Écran de résultats Maïeuthon</title>  
+<link rel="stylesheet" href="static/style.css"/>
+
+<style>
+  /*FONTS-------------------*/
+  @font-face {
+      font-family: 'Grotesque MT Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-Black.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-Black.woff') format('woff');
+      font-weight: 900;
+      font-style: normal;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Grotesque MT Std Bold';
+      src: url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-Bold.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-Bold.woff') format('woff');
+      font-weight: bold;
+      font-style: normal;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Grotesque MT Std Bold Condensed';
+      src: url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-BoldExtended.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-BoldExtended.woff') format('woff');
+      font-weight: bold;
+      font-style: normal;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Grotesque MT Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-Condensed.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-Condensed.woff') format('woff');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Grotesque MT Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-ExtraCond.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-ExtraCond.woff') format('woff');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Grotesque MT Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-Italic.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-Italic.woff') format('woff');
+      font-weight: normal;
+      font-style: italic;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Grotesque MT Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-Light.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-Light.woff') format('woff');
+      font-weight: 300;
+      font-style: normal;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Grotesque MT Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-LightCond.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-LightCond.woff') format('woff');
+      font-weight: 300;
+      font-style: normal;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Grotesque MT Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-LightItalic.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd-LightItalic.woff') format('woff');
+      font-weight: 300;
+      font-style: italic;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Grotesque MT Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/GrotesqueMTStd.woff') format('woff');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Letter Gothic Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/LetterGothicStd-Bold.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/LetterGothicStd-Bold.woff') format('woff');
+      font-weight: bold;
+      font-style: normal;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Letter Gothic Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/LetterGothicStd-BoldSlanted.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/LetterGothicStd-BoldSlanted.woff') format('woff');
+      font-weight: bold;
+      font-style: italic;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Letter Gothic Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/LetterGothicStd-Slanted.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/LetterGothicStd-Slanted.woff') format('woff');
+      font-weight: 500;
+      font-style: italic;
+      font-display: swap;
+  }
+  @font-face {
+      font-family: 'Letter Gothic Std';
+      src: url('https://fjdaz.com/bergson/statics/fonts/LetterGothicStd.woff2') format('woff2'), url('https://fjdaz.com/bergson/statics/fonts/LetterGothicStd.woff') format('woff');
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+  }
+
+  body {
+    margin: 0;
+    padding: 20px;
+    font-family: 'Grotesque MT Std Bold', Gotham, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: #f0f0f0;
+  }
+  
+  .info {
+    background: white;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  
+  .info h3 {
+    margin-top: 0;
+    color: #333;
+  }
+  
+  .info code {
+    background: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+  }
+</style>
+</head>
+<body>
+  <div class="info">
+    <h3>🔧 Page de test - Écran de résultats</h3>
+    <p>Cette page affiche l'écran de résultats pour débuguer le design.</p>
+    <p>Le code se trouve dans <code>showFinalResult()</code> (lignes 649-714 de index_spinoza.html)</p>
+    <p><strong>Pour modifier le design :</strong> Éditez la fonction <code>showFinalResult()</code> dans index_spinoza.html</p>
+  </div>
+
+<script>
+// Fonction showFinalResult extraite de index_spinoza.html
+function showFinalResult(data) {
+  // Créer modal avec placeholder dédié
+  const modal = document.createElement('div');
+  modal.id = 'maieuthon-result-modal';
+  modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;';
+  
+  const finalScore = data.score_final || 85;
+  let scoreColor = '#4CAF50';
+  if (finalScore < 50) scoreColor = '#F44336';
+  else if (finalScore < 80) scoreColor = '#FF9800';
+  
+  modal.innerHTML = `
+    <div style="background: white; padding: 40px; border-radius: 15px; max-width: 600px; width: 100%; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
+      <h2 style="color: #333; margin-bottom: 10px; font-size: 24px;">🎓 Résultat du Maïeuthon</h2>
+      <div style="font-size: 64px; font-weight: bold; color: ${scoreColor}; margin: 20px 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.1);">
+        ${finalScore}/100
+      </div>
+      
+      <!-- Message final du philosophe -->
+      <div id="maieuthon-final-message" style="margin: 25px 0; padding: 20px; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 10px; font-style: italic; font-size: 16px; line-height: 1.6; color: #333; min-height: 80px; display: flex; align-items: center; justify-content: center;">
+        ${data.message_final || 'Merci pour ce dialogue.'}
+      </div>
+      
+      <!-- Détails de l'évaluation -->
+      ${data.details_model ? `
+        <div id="maieuthon-details" style="margin-top: 25px; padding: 15px; background: #f9f9f9; border-radius: 8px; font-size: 14px; color: #666;">
+          <div style="display: flex; justify-content: space-around; margin-bottom: 10px;">
+            <div>
+              <div style="font-weight: bold; color: #333;">Compréhension</div>
+              <div style="font-size: 20px; color: #2196F3;">${data.details_model.comprehension || 0}/10</div>
+            </div>
+            <div>
+              <div style="font-weight: bold; color: #333;">Coopération</div>
+              <div style="font-size: 20px; color: #4CAF50;">${data.details_model.cooperation || 0}/10</div>
+            </div>
+            <div>
+              <div style="font-weight: bold; color: #333;">Progression</div>
+              <div style="font-size: 20px; color: #FF9800;">${data.details_model.progression || 0}/10</div>
+            </div>
+          </div>
+          <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
+            <strong>Total modèle:</strong> ${data.details_model.total || 0}/30
+          </div>
+        </div>
+      ` : ''}
+      
+      <!-- Bouton rejouer -->
+      <button id="maieuthon-replay-btn" onclick="location.reload();" 
+              style="margin-top: 30px; padding: 12px 30px; background: ${scoreColor}; color: white; border: none; border-radius: 25px; cursor: pointer; font-size: 16px; font-weight: bold; transition: transform 0.2s; font-family: 'Grotesque MT Std', Gotham, 'Helvetica Neue', Helvetica, Arial, sans-serif;"
+              onmouseover="this.style.transform='scale(1.05)'"
+              onmouseout="this.style.transform='scale(1)'">
+        🔄 Rejouer
+      </button>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Empêcher fermeture accidentelle
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      // Optionnel : empêcher fermeture en cliquant à l'extérieur
+      // modal.remove();
+    }
+  });
+}
+
+// Données de test
+const testData = {
+  score_final: 85,
+  message_final: "Excellent dialogue ! Vous avez suivi la méthode maïeutique avec sagesse et avez progressé dans votre compréhension. Continuez ainsi.",
+  details_model: {
+    comprehension: 8,
+    cooperation: 9,
+    progression: 7,
+    total: 24
+  }
+};
+
+// Afficher la modal au chargement de la page
+window.addEventListener('DOMContentLoaded', () => {
+  showFinalResult(testData);
+});
+</script>
+
+</body>
+</html>

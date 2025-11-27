@@ -1,0 +1,258 @@
+# =============================================================================
+# ⚡ ÉVALUATION INCRÉMENTALE - Fil de l'Eau (Optimisation Inférence)
+# =============================================================================
+# 🎮 Cellule Colab : Évaluation Incrémentale Maïeuthon
+# À ajouter APRÈS la cellule /evaluate (Maïeuthon) et AVANT la cellule Lancement Serveur
+# =============================================================================
+
+# Import nécessaire pour query parameter et modèles Pydantic
+from fastapi import Query
+from pydantic import BaseModel
+
+# Définir EvaluateRequest (déjà défini dans cellule Maïeuthon, mais on le redéfinit ici pour autonomie)
+# Si la cellule Maïeuthon a été exécutée, cette définition sera écrasée (pas de conflit)
+class EvaluateRequest(BaseModel):
+    dialogue: str
+    score_front: int
+
+# Prompt évaluation incrémentale (court, rapide)
+PROMPT_EVALUATION_INCREMENTAL = """Évalue rapidement (0-10) :
+- Compréhension : Comprend-il mes idées ?
+- Coopération : Coopère-t-il dans le dialogue ?
+- Progression : Sa pensée progresse-t-elle ?
+
+Dialogue récent (2 derniers échanges) :
+{dialogue_recent}
+
+IMPORTANT: Réponds UNIQUEMENT avec un JSON valide, AUCUNE prose avant ou après.
+
+Format JSON strict :
+{{
+ "comprehension": X,
+ "cooperation": Y,
+ "progression": Z,
+ "total": X+Y+Z
+}}"""
+
+# Stockage scores incrémentaux (en mémoire)
+# Structure : {dialogue_id: [scores_échange_2, scores_échange_4, ...]}
+incremental_scores = {}
+
+def evaluer_incremental(dialogue: str, debug: bool = False, return_raw: bool = False):
+    """
+    Évaluation légère au fil de l'eau (tous les 2 échanges)
+    - Prompt court (2 derniers échanges seulement)
+    - Température basse (0.1) - Strict pour JSON
+    - Max tokens réduit (100) - Garantit un JSON complet
+    - Pas de message final - Gain de temps
+    
+    Args:
+        dialogue: Le dialogue à évaluer
+        debug: Si True, affiche la réponse brute du modèle pour diagnostic (dans les logs Colab)
+        return_raw: Si True, retourne aussi la réponse brute du modèle dans le tuple
+    
+    Returns:
+        dict: Les scores évalués si return_raw=False
+        tuple: (dict scores, str raw_response) si return_raw=True
+    """
+    # Extraire les 2 derniers échanges seulement (4 lignes : Élève + Spinoza x2)
+    lines = [l.strip() for l in dialogue.split('\n') if l.strip()]
+    if len(lines) > 4:
+        recent_exchanges = '\n'.join(lines[-4:])  # 2 derniers échanges
+    else:
+        recent_exchanges = dialogue
+    
+    prompt_eval = PROMPT_EVALUATION_INCREMENTAL.format(dialogue_recent=recent_exchanges)
+    
+    # Formatage Mistral
+    prompt_eval_formatted = f"<s>[INST] {prompt_eval} [/INST]"
+    
+    inputs = tokenizer(prompt_eval_formatted, return_tensors="pt").to(model.device)
+    input_length = inputs['input_ids'].shape[1]
+    
+    device_type = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.bfloat16 if device_type == "cuda" else torch.float32
+    
+    # Inférence rapide (température basse, tokens réduits)
+    with torch.autocast(device_type=device_type, dtype=dtype):
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=100,  # Augmenté pour garantir un JSON complet (était 50)
+            temperature=0.1,    # Strict pour JSON
+            top_p=0.9,
+            do_sample=True,
+            repetition_penalty=1.2,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id
+        )
+    
+    new_tokens = outputs[0][input_length:]
+    reponse_eval = tokenizer.decode(new_tokens, skip_special_tokens=True)
+    
+    # Debug: afficher la réponse brute si demandé
+    if debug:
+        print(f"🔍 [DEBUG] Réponse brute du modèle: {reponse_eval[:500]}")
+    
+    # Parser JSON (amélioré pour capturer même avec texte autour)
+    # Essayer plusieurs stratégies de parsing
+    details_model = None
+    
+    # Stratégie 1: Pattern spécifique avec tous les champs requis
+    # Accepter les variantes avec/sans accents
+    json_pattern = r'\{[^{}]*"(?:comprehension|compréhension|comprésentation)"[^{}]*"(?:cooperation|coopération)"[^{}]*"progression"[^{}]*"total"[^{}]*\}'
+    json_match = re.search(json_pattern, reponse_eval, re.DOTALL)
+    
+    if json_match:
+        try:
+            json_str = json_match.group(0)
+            # Nettoyer le JSON (enlever les retours à la ligne en trop, etc.)
+            json_str = json_str.strip()
+            details_model = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            # Debug: afficher la réponse brute pour diagnostic
+            if debug:
+                print(f"⚠️ Erreur parsing JSON incrémental (stratégie 1): {e}")
+                print(f"   JSON brut extrait: {json_match.group(0)[:300]}")
+    
+    # Stratégie 2: Si échec, chercher le premier bloc JSON valide
+    if not details_model:
+        json_pattern_fallback = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+        json_match = re.search(json_pattern_fallback, reponse_eval, re.DOTALL)
+        if json_match:
+            try:
+                json_str = json_match.group(0).strip()
+                details_model = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                if debug:
+                    print(f"⚠️ Erreur parsing JSON incrémental (stratégie 2): {e}")
+    
+    # Stratégie 3: Si toujours échec, essayer de parser directement toute la réponse
+    if not details_model:
+        try:
+            details_model = json.loads(reponse_eval.strip())
+        except json.JSONDecodeError:
+            if debug:
+                print(f"⚠️ Erreur parsing JSON incrémental (stratégie 3): Impossible de parser la réponse")
+                print(f"   Réponse complète: {reponse_eval[:300]}")
+    
+    # Valider et compléter le modèle
+    if details_model and isinstance(details_model, dict):
+        # Normaliser les clés (gérer les accents : "compréhension" -> "comprehension")
+        # Mapping des variantes possibles vers les clés standard
+        import unicodedata
+        
+        def normalize_key(key: str) -> str:
+            """Normalise une clé en enlevant les accents et en minuscules"""
+            # Enlever les accents
+            key_normalized = unicodedata.normalize('NFD', key.lower())
+            key_normalized = ''.join(c for c in key_normalized if unicodedata.category(c) != 'Mn')
+            
+            # Mapping spécifique pour les fautes de frappe courantes
+            mapping = {
+                "comprehension": "comprehension",
+                "compréhension": "comprehension",
+                "comprésentation": "comprehension",  # Faute de frappe
+                "cooperation": "cooperation",
+                "coopération": "cooperation",
+                "progression": "progression",
+                "total": "total"
+            }
+            
+            return mapping.get(key_normalized, key_normalized)
+        
+        # Créer un nouveau dict avec les clés normalisées
+        normalized_model = {}
+        for key, value in details_model.items():
+            normalized_key = normalize_key(key)
+            # Si la clé normalisée existe déjà, garder la valeur la plus élevée (ou la première)
+            if normalized_key not in normalized_model:
+                normalized_model[normalized_key] = value
+            else:
+                # Si deux clés se normalisent vers la même, prendre la valeur numérique la plus élevée
+                if isinstance(value, (int, float)) and isinstance(normalized_model[normalized_key], (int, float)):
+                    normalized_model[normalized_key] = max(value, normalized_model[normalized_key])
+        
+        details_model = normalized_model
+        
+        # Valider que tous les champs sont présents
+        required_fields = ["comprehension", "cooperation", "progression", "total"]
+        for field in required_fields:
+            if field not in details_model:
+                details_model[field] = 5 if field != "total" else 15
+        
+        # Valider les valeurs (doivent être des nombres entre 0 et 10, ou total entre 0 et 30)
+        for field in ["comprehension", "cooperation", "progression"]:
+            if not isinstance(details_model[field], (int, float)) or not (0 <= details_model[field] <= 10):
+                details_model[field] = 5
+        
+        # Recalculer total si nécessaire
+        if "total" not in details_model or not isinstance(details_model["total"], (int, float)):
+            details_model["total"] = details_model.get("comprehension", 5) + \
+                                    details_model.get("cooperation", 5) + \
+                                    details_model.get("progression", 5)
+    else:
+        # Valeurs par défaut si parsing échoue
+        # Toujours afficher dans les logs Colab pour diagnostic
+        print(f"⚠️ JSON non trouvé ou invalide dans réponse incrémentale")
+        print(f"   Réponse brute (premiers 500 chars): {reponse_eval[:500]}")
+        details_model = {"comprehension": 5, "cooperation": 5, "progression": 5, "total": 15}
+    
+    # Retourner selon le mode demandé
+    if return_raw:
+        return details_model, reponse_eval
+    return details_model
+
+# Endpoint FastAPI pour évaluation incrémentale
+@app.post("/evaluate/incremental")
+def evaluate_incremental(
+    req: EvaluateRequest,
+    debug: bool = Query(False, description="Activer le mode debug pour voir la réponse brute du modèle")
+):
+    """
+    Évaluation légère au fil de l'eau (tous les 2 échanges)
+    - Appelé par le frontend après chaque 2 échanges
+    - Stocke les scores pour l'évaluation finale
+    - Retourne seulement les scores (pas de message final)
+    
+    Paramètre debug (query string):
+        ?debug=true - Retourne aussi la réponse brute du modèle dans la réponse HTTP
+                      Exemple: POST /evaluate/incremental?debug=true
+    """
+    # Évaluer le dialogue récent (avec debug si demandé via query param ?debug=true)
+    if debug:
+        details_model, raw_response = evaluer_incremental(req.dialogue, debug=True, return_raw=True)
+    else:
+        details_model = evaluer_incremental(req.dialogue, debug=False, return_raw=False)
+        raw_response = None
+    
+    # Stocker pour l'évaluation finale
+    # Utiliser un ID simple basé sur le hash du dialogue
+    # En production, utiliser un vrai ID de session
+    dialogue_id = hash(req.dialogue)
+    
+    if dialogue_id not in incremental_scores:
+        incremental_scores[dialogue_id] = []
+    
+    incremental_scores[dialogue_id].append({
+        "scores": details_model,
+        "exchange_count": len(incremental_scores[dialogue_id]) + 1
+    })
+    
+    # Préparer la réponse
+    response = {
+        "scores": details_model,
+        "exchange_count": len(incremental_scores[dialogue_id]),
+        "accumulated": len(incremental_scores[dialogue_id]) > 0
+    }
+    
+    # Ajouter la réponse brute si debug demandé
+    if debug and raw_response:
+        response["debug"] = {
+            "raw_model_response": raw_response[:500],  # Premiers 500 chars
+            "parsing_success": details_model.get("total", 0) != 15  # True si parsing réussi (pas valeurs par défaut)
+        }
+    
+    return response
+
+print("✅ Endpoint /evaluate/incremental créé pour évaluation au fil de l'eau")
+

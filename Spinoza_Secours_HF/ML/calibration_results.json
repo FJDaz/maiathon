@@ -1,0 +1,7 @@
+{
+  "note": "Ce fichier devrait être généré par calibrate_evaluator.py",
+  "emplacement_correct": "Le fichier est dans /Users/francois-jeandazin/bergsonAndFriends/calibration_results.json",
+  "pour_le_voir": "cd /Users/francois-jeandazin/bergsonAndFriends && cat calibration_results.json",
+  "ou_depuis_spinoza": "cd Spinoza_Secours_HF && cat ../calibration_results.json"
+}
+
