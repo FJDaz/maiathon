@@ -26,8 +26,11 @@ ADAPTER_MODEL = "FJDaz/mistral-7b-philosophes-lora"
 HF_TOKEN = os.getenv("HF_TOKEN")
 PORT = int(os.getenv("PORT", "8000"))
 
+# Token optionnel : warning si absent mais ne bloque pas le démarrage
 if not HF_TOKEN:
-    raise ValueError("HF_TOKEN environment variable is required")
+    print("⚠️ WARNING: HF_TOKEN environment variable not set. Model download may fail.")
+    print("⚠️ Set HF_TOKEN environment variable for Hugging Face model access.")
+    HF_TOKEN = None  # Permet de continuer, mais le téléchargement du modèle échouera
 
 # =============================================================================
 # PROMPTS
@@ -230,22 +233,33 @@ def load_model():
 
     print(f"🔄 Chargement Mistral 7B ({'4-bit GPU' if has_gpu else 'FP32 CPU'})...")
 
+    # Préparer les arguments avec token seulement si défini
+    model_kwargs = {
+        "quantization_config": quantization_config,
+        "device_map": device_map,
+        "torch_dtype": torch_dtype,
+        "trust_remote_code": True,
+        "low_cpu_mem_usage": True
+    }
+    if HF_TOKEN:
+        model_kwargs["token"] = HF_TOKEN
+
     base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
-        quantization_config=quantization_config,
-        device_map=device_map,
-        torch_dtype=torch_dtype,
-        token=HF_TOKEN,
-        trust_remote_code=True,
-        low_cpu_mem_usage=True
+        **model_kwargs
     )
 
     print("🔄 Chargement tokenizer...")
 
+    tokenizer_kwargs = {
+        "trust_remote_code": True
+    }
+    if HF_TOKEN:
+        tokenizer_kwargs["token"] = HF_TOKEN
+
     tokenizer = AutoTokenizer.from_pretrained(
         BASE_MODEL,
-        token=HF_TOKEN,
-        trust_remote_code=True
+        **tokenizer_kwargs
     )
 
     if tokenizer.pad_token is None:
@@ -253,10 +267,14 @@ def load_model():
 
     print("🔄 Application LoRA Spinoza_Secours...")
 
+    lora_kwargs = {}
+    if HF_TOKEN:
+        lora_kwargs["token"] = HF_TOKEN
+
     model = PeftModel.from_pretrained(
         base_model,
         ADAPTER_MODEL,
-        token=HF_TOKEN
+        **lora_kwargs
     )
 
     print("✅ Modèle Mistral 7B + LoRA chargé!")
