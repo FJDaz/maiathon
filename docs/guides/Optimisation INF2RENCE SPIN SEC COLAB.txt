@@ -1,0 +1,150 @@
+Parfait — voici un plan exact, priorisé et formaté en Markdown pour être interprétable par Cursor Plan (Plan Mode) et générer automatiquement une liste de TODOs/actionables. Je l’ai structuré avec milestones, tâches atomicisées, commandes/code à coller, criteres d’acceptation et points de vérification — tout ce dont un agent Plan Mode a besoin pour parcourir ton repo et créer des tâches exécutable automatiquement. (Voir doc Plan Mode de Cursor pour l’import / usage). (Cursor)
+Copie-colle tout le bloc Markdown ci-dessous dans Cursor (Plan Mode) — il sera transformé en plan / TODOs.
+Plan d'optimisation — Spinoza Secours & Maïeuthon (exécutable par Cursor Plan)
+But : réduire la latence d’inférence et le coût d’exécution du pipeline Spinoza Secours → objectif concret : x3 inference speed-up réaliste (ordre de grandeur). Contrainte d’exécution : Colab (T4/V100) + FastAPI + ngrok + Mistral 7B + LoRA.
+
+Milestone A — Validation infra & baseline (Priorité : Haute)
+Objectif : mesurer l’état actuel (baseline) pour comparer gains.
+	•	A.1 Reproduire le pipeline actuel et mesurer
+	◦	Action : lancer RAG_Spinoza_secours.ipynb en mode inference, exécuter 10 prompts typiques (historique complet 5 tours).
+	◦	Commande utile : # exemple: script minimal pour benchmark
+	◦	python backend/benchmark_inference.py --model_path ./models/mistral7b-lora --n_runs 10 --prompt_file tests/prompts.json
+	◦	
+	◦	Artefacts : benchmarks/baseline.json (latences médianes & p95, mémoire GPU, tokens envoyés).
+	◦	Critère d'acceptation : fichier benchmarks/baseline.json présent et contient median_latency, p95_latency, gpu_mem.
+	•	A.2 Enregistrer la config exacte
+	◦	Fichier : infra/ENVIRONMENT.md avec : Colab GPU type, versions torch/transformers/bnb, tokens HF, ngrok token.
+	◦	Critère : ENVIRONMENT.md commité.
+Checkpoint A: baseline validée et commit baseline créé.
+
+Milestone B — Fusion LoRA + save as merged model (Priorité : Très haute)
+Raison : fusionner LoRA offline réduit overhead runtime; faible perte qualité.
+	•	B.1 Script de fusion LoRA
+	◦	Fichier à créer : tools/merge_lora.py
+	◦	Snippet à utiliser : from peft import PeftModel, PeftConfig
+	◦	from transformers import AutoModelForCausalLM
+	◦	
+	◦	base = "mistralai/Mistral-7B-Instruct-v0.2"
+	◦	lora = "FJDaz/mistral-7b-philosophes-lora"
+	◦	
+	◦	model = AutoModelForCausalLM.from_pretrained(base, torch_dtype="auto")
+	◦	peft_model = PeftModel.from_pretrained(model, lora)
+	◦	peft_model.merge_and_unload()  # or peft_model.merge_and_save("merged_mistral7b")
+	◦	peft_model.save_pretrained("models/mistral7b_merged_lora")
+	◦	
+	◦	Critère : dossier models/mistral7b_merged_lora créé et chargé sans LoRA à l’inférence.
+	•	B.2 Benchmark post-fusion
+	◦	Exécuter backend/benchmark_inference.py --model_path models/mistral7b_merged_lora
+	◦	Comparer avec baseline (benchmarks/baseline.json) → écrire benchmarks/post_merge.json.
+Checkpoint B: gain mesurable > 15% ou note d’écart ; commit merge-lora.
+
+Milestone C — Quantization (GPTQ/AWQ) (Priorité : Très haute)
+Raison : plus gros levier sur T4 (4-bit ou AWQ souvent meilleur).
+	•	C.1 Choisir et intégrer outil (GPTQ or AWQ)
+	◦	Action : si GPU/colab permet, prioriser AWQ (ou GPTQ si AWQ non compatible).
+	◦	Liens / libs à ajouter : gptq / awq (installer avec pip / wheel compatible).
+	◦	Exemple commande (GPTQ): python tools/quantize_gptq.py --model_dir models/mistral7b_merged_lora --out_dir models/mistral7b_gptq_4bit
+	◦	
+	◦	Exemple AWQ (conceptuel): python tools/quantize_awq.py --model_dir models/mistral7b_merged_lora --out_dir models/mistral7b_awq_4bit
+	◦	
+	•	C.2 Test qualité (sanity)
+	◦	Action : run 20 prompts (same set), compute BLEU / perplexity proxy or human-read sanity.
+	◦	Artifact : benchmarks/quant_4bit.json
+	•	C.3 Fallback plan
+	◦	Si quantization dégrade trop la qualité → tester per-layer keep/fp16 for attention/proj layers.
+Checkpoint C: quantized model with latency reduction ≥ 25% vs post-merge and dégradation qualitativement acceptable (score humain ou metric ≤ 5% dégradation).
+
+Milestone D — Réduction & condensation du contexte (Priorité : Haute)
+Raison : envoyer moins de tokens = moins de compute.
+	•	D.1 Implémenter condensation automatique
+	◦	Fichier : backend/context_manager.py
+	◦	Comportement :
+	▪	après chaque tour, produire condensed_summary = model_condense(last_exchange) (ou simple heuristic extractive: première phrase + 1 bullet).
+	▪	stocker condensed_history (max 6 bullets).
+	◦	Snippet (heuristique): def condense_exchange(history):
+	◦	    # simple heuristic: keep user intent + assistant correction
+	◦	    return summarize_text(history[-2:])[:200]  # limit chars
+	◦	
+	◦	Critère : condensed_history utilisé par défaut dans /chat et taille < 500 tokens.
+	•	D.2 A/B test full history vs condensed
+	◦	Route /bench/context_ab_test qui compare latence & quality.
+	◦	Artifact: benchmarks/context_vs_full.json
+Checkpoint D: réduction tokens envoyés ≥ 40% et latency improvement visible.
+
+Milestone E — Unifier /chat + evaluate/incremental (Priorité : Haute)
+Raison : économiser appels modèle en regroupant tâches dans 1 seul appel multi-tâche.
+	•	E.1 Refactor endpoint /chat_plus_eval
+	◦	Comportement : reçoit message, history, eval_mode ; construit prompt multi-part : [TASK 1] Répond en tant que Spinoza (temp=0.7)
+	◦	[TASK 2] Évalue les 2 derniers échanges (json, temp=0.3)
+	◦	
+	◦	Parser : split by markers, extraire response_text et evaluation_json.
+	•	E.2 Backward-compatible
+	◦	Laisser /evaluate/incremental existant jusqu'à validation ; basculer front après tests.
+	•	E.3 Benchmark
+	◦	Mesurer appels économisés et latence cumulée.
+	◦	Artifact: benchmarks/chat_plus_eval.json
+Checkpoint E: 1 appel remplace 2 appels sur 70% des scénarios → réduire nombre total d’appels modèle de ~25%.
+
+Milestone F — FlashAttention / Torch config / CUDA graph (Priorité : Moyenne)
+Raison : gains complémentaires si environnement supporte.
+	•	F.1 Activer channels_last / tf32 / flash-attn si dispo
+	◦	Snippet : model = model.to(memory_format=torch.channels_last)
+	◦	torch.backends.cuda.matmul.allow_tf32 = True
+	◦	# if using xformers/flash_attn: set attn_impl param
+	◦	
+	•	F.2 Tester CUDA Graphs (si torch >= 2.2 & drivers support)
+	◦	Implémentation avancée ; créer tools/cuda_graph_wrapper.py.
+Checkpoint F: gains cumulés > 10% sur top des optimisations précédentes.
+
+Milestone G — Déploiement & monitoring (Priorité : Moyenne)
+Raison : valider robustesse en usage réel.
+	•	G.1 Metrics endpoint /metrics (Prometheus style minimal)
+	◦	Exposer inference_time, calls_count, failures, avg_tokens_in.
+	•	G.2 Alerting / limits
+	◦	Stopper les sessions > X tokens, return friendly message.
+	•	G.3 Cost report automatisé (daily) → reports/cost_YYYYMMDD.csv.
+Checkpoint G: monitoring visible et alertes testées.
+
+Milestone H — Adapter SNB (QWEN-14B FT) et multi-personnification RAG (Priorité : Faible / après A–G)
+Raison : plus lourd — faire après stabilisation infra.
+	•	H.1 Portage du pipeline sur QWEN-14B (SNB) — uniquement après quant + merge test sur Mistral.
+	•	H.2 Personnification via RAG : embeddings pré-computés, index local (LanceDB / Faiss quantized), retrieval + prompt template persona.
+	•	H.3 Testing qualité persona (Spinoza / Bergson / Kant) — tests éducatifs.
+Checkpoint H: seulement si budget infra & latence OK.
+
+Deliverables & fichiers à créer (liste pour Cursor)
+	•	infra/ENVIRONMENT.md
+	•	backend/benchmark_inference.py
+	•	tools/merge_lora.py
+	•	tools/quantize_gptq.py or tools/quantize_awq.py
+	•	backend/context_manager.py
+	•	backend/chat_plus_eval.py (refactor endpoint)
+	•	tools/cuda_graph_wrapper.py (optionnel)
+	•	benchmarks/*.json
+	•	reports/cost_*.csv
+	•	docs/ACCEPTANCE_CRITERIA.md
+
+Règles d’acceptation (synthèse)
+	•	Baseline capturée (benchmarks/baseline.json).
+	•	Post-optim : median_latency ≤ baseline / 3 (objectif).
+	•	Qualité : pas de dégradation majeure — test humain sur 50 prompts (score subjectif ≥ 8/10) ou metric automatique (ex: semantic-similarity ≥ 0.92).
+	•	Stabilité : 24h uptime sur Colab (ou serveur test) sans OOM.
+
+Priorité récapitulée (ordre d’exécution conseillé)
+	1	Milestone A — Baseline (Haute)
+	2	Milestone B — Fusion LoRA (Très haute)
+	3	Milestone C — Quantization GPTQ/AWQ (Très haute)
+	4	Milestone D — Condensation du contexte (Haute)
+	5	Milestone E — Unifier chat + eval (Haute)
+	6	Milestone F — FlashAttention / CUDA Graphs (Moyenne)
+	7	Milestone G — Monitoring & déploiement (Moyenne)
+	8	Milestone H — QWEN / Multi-persona RAG (Faible — post opti)
+
+Instructions pour import dans Cursor Plan Mode
+	1	Ouvrir Cursor → Plan Mode (Shift+Tab ou bouton Plan Mode). (Cursor)
+	2	Coller ce Markdown dans l’éditeur de plan.
+	3	Laisser l’agent analyser le repo ; il va transformer chaque - [ ] en TODO.
+	4	Répondre aux questions clarificatrices du Plan Agent si demandé (ex: chemin exact du repo, tokens).
+	5	Lancer l’exécution des tâches (ou assigner).
+
+

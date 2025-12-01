@@ -1,4 +1,4 @@
-# 📚 Documentation du Projet Bergson and Friends
+# 📚 Documentation Spinoza Secours HF
 
 ## Structure des Dossiers
 
@@ -19,64 +19,39 @@ docs/
 
 ### `docs/tutos/`
 Guides pas à pas :
-- **create-fastapi-space.md** : Créer un Space FastAPI de test sur HF
-- **guide-upload-app-js.md** : Guide pour uploader app.js sur fjdaz.com
-- **guide-upload-index-html.md** : Guide pour uploader index.html sur fjdaz.com
+- **ordre-execution-colab.md** : Ordre d'exécution des cellules dans Colab
+- **commandes-colab-git.md** : Commandes Git pour Colab
+- **cellule-maieuthon-backend.md** : Ajouter la cellule Maïeuthon au notebook
 
 ### `docs/notes/`
 Notes rapides et réflexions :
-- **actions-restantes.md** : Actions restantes - 17 Novembre 2025
-- **action-finale.md** : Action finale - Uploader les 2 fichiers
-- **action-immediate-fjdaz.md** : Action immédiate - Rien ne s'affiche
-- **contexte-session-17nov.md** : Résumé de contexte - Session 17 Novembre
-- **status-actuel.md** : Status actuel - 17 Novembre 2025
+- **mapping-bergson-hf-vs-racine.md** : Mapping entre fichiers HF et racine
+- **proposition-code-colab.md** : Proposition de code pour Colab
 
 ### `docs/references/`
 Explications techniques et concepts :
-- **methode-meta-skills.md** : Méthode méta pour créer des skills (structure, principes, workflow)
-- **prompt-generateur-skills.md** : Prompt complet pour générer automatiquement des skills
-- **snb-rag-local.md** : Skill de test SNB + RAG en local (Netlify Functions)
-- **repli-backend.md** : Stratégie de repli backend SNB
-- **repli-runpod.md** : Plan de repli RunPod - Guide complet
-- **spinoza-nb-versions.md** : Archive complète - spinoza_NB - Toutes les versions
-
-### `docs/guides/`
-Guides pratiques :
-- (À compléter selon besoins)
+- **arborescence-repo.md** : Structure du repository
+- **calibration-evaluation.md** : Méthode de calibration de l'évaluateur
+- **prompt-systeme-hybride.md** : Documentation du prompt système hybride
 
 ### `docs/analyses/`
 Analyses détaillées et bilans :
-- (À compléter selon besoins)
+- **analyse-whoosh-rag-client.md** : Analyse Whoosh RAG côté client
+- **rapport-prompt-sys-rag.md** : Rapport sur les prompts système et RAG
+- **audit-bordel-local.md** : Audit de l'organisation locale
 
 ### `docs/tests/`
 Documentation des tests :
-- **archives/** : Archives automatiques (après 1 jour)
+- **resultats-test-prompt.md** : Résultats des tests de prompts
 
 ### `docs/supports/`
 Support technique :
-- **fix-api-url.md** : Fix urgent - Configuration URL API Netlify
-- **fix-gradio-client.md** : Fix - Remplacement de @gradio/client
-- **fix-mock-netlify.md** : Fix - Désactiver le Mock sur Netlify
-- **fix-prompt-systeme.md** : Fix - Prompt Système Complet Utilisé
-- **debug-cache.md** : Debug - Problème de Cache ou Chemin
-- **debug-fjdaz.md** : Debug - Rien ne s'affiche sur fjdaz.com
-- **solution-cache.md** : Solution - Problème de Cache
-- **solution-mystere.md** : Solution au Mystère du Cache
-- **probleme-upload.md** : Problème - Fichier Uploadé Incomplet
-- **trouver-chemin-serveur.md** : Trouver le chemin serveur
-- **verification-app-js.md** : Vérification app.js
-- **urgent-upload-app-js-v2.md** : Urgent - Upload app.js v2
-- **urgent-upload-index-html.md** : Urgent - Upload index.html
+- (À compléter selon besoins)
 
 ### `docs/logs/`
 Logs et traces d'exécution :
-- **Railway_logs** : Logs du service Railway
-- Logs de services (Netlify, HF Spaces, etc.)
-- Traces d'erreurs et d'exécution
-
-## 🔄 Archivage Automatique
-
-Les documents de plus de 1 jour dans `docs/tests/` sont automatiquement déplacés vers `docs/tests/archives/` par le script `tools/archive_old_docs.py` (à créer).
+- Dialogues réels pour calibration
+- Logs d'exécution Colab
 
 ## 📝 Conventions
 
@@ -84,22 +59,7 @@ Les documents de plus de 1 jour dans `docs/tests/` sont automatiquement déplac�
 - **Noms de fichiers** : En minuscules avec tirets (`-`)
 - **Dates** : Format `YYYY-MM-DD` dans les noms de fichiers archivés
 
-## 🎯 Skills Disponibles
-
-### Skills Documentés
-
-1. **snb-rag-local** : Tester SNB + RAG en local
-   - **Documentation** : `docs/references/snb-rag-local.md`
-   - **Usage** : Test local du système RAG + SNB avec Netlify CLI
-
-### Créer un Nouveau Skill
-
-Suivre la méthode méta documentée dans `docs/references/methode-meta-skills.md` :
-1. Créer la documentation dans `docs/references/[nom-skill].md`
-2. Créer l'implémentation dans `tools/[nom_skill].py` (ou `.js` selon le projet)
-3. **Cursor** peut invoquer automatiquement les skills après actions importantes
-
 ## 🔄 Archivage Automatique
 
-Les documents de plus de 1 jour dans `docs/tests/` peuvent être automatiquement archivés par **Cursor** en utilisant le skill `archive-docs-manager` (à créer selon la méthode méta).
+Les documents de plus de 1 jour dans `docs/tests/` sont automatiquement déplacés vers `docs/tests/archives/` par les skills Cursor.
 

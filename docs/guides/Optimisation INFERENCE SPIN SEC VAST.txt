@@ -1,0 +1,92 @@
+Parfait. Je te propose un plan opérationnel Cursor, formaté pour génération de TODOs, en deux phases : Colab pour préparation / fusion / quantization, et Vast.ai pour déploiement et tests. Il est pensé pour ton workflow Spinoza/Maïeuthon → SNB → RAG multi-philosophes.
+
+🎯 Plan Cursor : Optimisation + Déploiement
+Phase 1 : Préparation & optimisation sur Colab
+1. Préparer l’environnement
+	•	Installer dépendances (transformers, peft, bitsandbytes, vLLM, accelerate)
+	•	Configurer tokens HF et secrets Colab
+	•	Vérifier GPU disponible (nvidia-smi)
+	•	Créer dossier /content/models/ pour centraliser les modèles
+
+2. Fusion LoRA → modèle complet
+	•	Charger modèle base (Mistral 7B / SNB 14B)
+	•	Charger adapters LoRA spécifiques (Spinoza, éventuellement Bergson/Kant)
+	•	Fusionner (merge_and_unload)
+	•	Sauvegarder modèle fusionné (/content/models/model_fused)
+	•	Push sur HF dans repo séparé (model_fused_spinoza)
+
+3. Quantization INT4 / AWQ
+	•	Charger modèle fusionné
+	•	Appliquer quantization AWQ4 / GPTQ
+	•	Tester génération rapide sur prompt court
+	•	Sauvegarder /content/models/model_awq4
+	•	Push sur HF (model_awq4_spinoza)
+
+4. Benchmark local Colab
+	•	Préparer 10–20 prompts typiques élèves
+	•	Mesurer temps moyen / tok
+	•	Vérifier stabilité mémoire et absence d’OOM
+	•	Afficher latence, débit, VRAM utilisée
+
+5. Nettoyage contexte et limites max tokens
+	•	Implémenter routine trimming historique
+	•	Définir max tokens (ex : 1024–2048 selon modèle)
+	•	Vérifier que latence reste stable après plusieurs échanges
+
+6. Activer streaming
+	•	Modifier endpoint FastAPI pour stream=True
+	•	Tester affichage token par token sur frontend
+	•	Vérifier UX et performance sur Colab
+
+Phase 2 : Déploiement & test sur Vast.ai
+7. Préparer machine Vast.ai
+	•	Choisir GPU compatible (T4, A10, A100)
+	•	Définir image Docker avec dépendances (ou environnement HF vLLM)
+	•	Configurer accès SSH / Jupyter / API
+	•	Monter repo HF contenant modèle fusionné + quantisé
+
+8. Charger modèle et vLLM
+	•	Initialiser modèle en INT4 AWQ sur GPU
+	•	Activer FlashAttention2
+	•	Configurer streaming et batch dynamique
+	•	Tester 1 prompt → vérifier sortie correcte et latence
+
+9. Test multi-utilisateurs
+	•	Simuler 10 élèves simultanés (prompts parallèles)
+	•	Vérifier temps moyen / réponse / stabilité
+	•	Monitor VRAM et I/O GPU (vLLM dashboard)
+	•	Ajuster batch size / context trimming si nécessaire
+
+10. Mise en production minimale
+	•	Exposer endpoints /chat, /evaluate, /evaluate/incremental
+	•	Vérifier sécurité et CORS pour frontend
+	•	Préparer script benchmark simple pour 30–50 requêtes séquentielles
+	•	Noter métriques : latence, débit, VRAM, stabilité
+
+11. Préparer extensions philosophiques
+	•	Charger adapters LoRA Bergson/Kant
+	•	Répéter fusion + quantization → HF repo séparé
+	•	Adapter prompt système SNB pour gestion multi-personnalités philosophiques
+	•	Tester dialogues 2–3 utilisateurs simultanés
+
+12. Documentation & suivi
+	•	Noter chaque modèle HF séparément
+	•	Décrire optimisations appliquées (fusion, quantization, vLLM, trimming, streaming)
+	•	Tenir métriques pour comparaison : avant/après optimisation
+	•	Préparer notes pour élargissement futur (plus de 10 élèves, autres GPU)
+
+🔹 Priorités pour Cursor
+	1	Fusion + sauvegarde modèle (colab)
+	2	Quantization INT4 → test rapide
+	3	vLLM + FlashAttention2 → test 1 prompt
+	4	Streaming + trimming → UX et stabilité
+	5	Déploiement sur Vast.ai → test multi-élèves
+	6	Benchmarks 30–50 prompts → collecte métriques
+
+Si tu veux, je peux te générer directement le plan Cursor en format JSON prêt à importer, avec :
+	•	chaque tâche
+	•	sous-tâches
+	•	dépendances
+	•	prompts ou notes d’exécution
+	•	indicateurs de succès
+Veux‑tu que je fasse ça ?

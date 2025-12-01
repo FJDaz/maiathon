@@ -1,0 +1,122 @@
+# 🎓 Spinoza Secours HF
+
+**Projet :** Assistant philosophique Spinoza - Mistral 7B + LoRA  
+**Backend :** FastAPI + Colab + ngrok  
+**Frontend :** HTML/JS vanilla
+
+---
+
+## 📁 Structure du Projet
+
+```
+Spinoza_Secours_HF/
+├── Backend/              # Serveur API (FastAPI, ngrok)
+│   ├── RAG_Spinoza_secours.ipynb    # Notebook Colab principal
+│   ├── colab_spinoza_secours.ipynb  # Version alternative
+│   └── index_spinoza.html            # Frontend HTML
+│
+├── ML/                   # Préparation du modèle (prompts, tests, calibration)
+│   ├── prompt_systeme_hybride.py    # Prompt système optimisé (~250 tokens)
+│   ├── test_prompt_systeme.py       # Tests du prompt
+│   ├── calibrate_evaluator.py       # Calibration de l'évaluateur
+│   └── dialogue-reel-1.txt          # Dialogue réel pour calibration
+│
+└── docs/                 # Documentation
+    ├── tutos/            # Guides pas à pas
+    ├── notes/            # Notes rapides
+    ├── references/       # Références techniques
+    ├── analyses/         # Analyses détaillées
+    ├── tests/            # Documentation des tests
+    ├── supports/         # Support technique
+    └── logs/             # Logs et traces
+```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Backend (Serveur API)
+
+1. **Ouvrir** `Backend/RAG_Spinoza_secours.ipynb` dans Google Colab
+2. **Configurer les secrets** Colab :
+   - `ngrok` : Token ngrok
+   - `HuggingFaceToken` : Token Hugging Face
+   - `COLAB_GITHUB_TOKEN` : Token GitHub
+3. **Exécuter les cellules** dans l'ordre
+4. **Récupérer l'URL ngrok** générée
+
+### 2. Frontend
+
+1. **Mettre à jour** l'URL dans `Backend/index_spinoza.html` (ligne ~106)
+   ```javascript
+   const API_BASE_URL = 'https://votre-url-ngrok.ngrok-free.dev';
+   ```
+2. **Ouvrir** `Backend/index_spinoza.html` dans un navigateur
+
+---
+
+## 📚 Documentation
+
+- **README Backend :** `Backend/README.md`
+- **README ML :** `ML/README.md`
+- **Documentation complète :** `docs/README.md`
+- **Tutos :** `docs/tutos/`
+
+---
+
+## 🔧 Développement
+
+### Préparer un Nouveau Prompt
+
+1. **Modifier** `ML/prompt_systeme_hybride.py`
+2. **Tester** avec `ML/test_prompt_systeme.py`
+3. **Intégrer** dans `Backend/RAG_Spinoza_secours.ipynb`
+
+### Calibrer l'Évaluateur
+
+1. **Préparer** des dialogues réels dans `ML/`
+2. **Lancer** `ML/calibrate_evaluator.py` avec l'URL ngrok
+3. **Ajuster** les prompts selon les résultats
+
+---
+
+## 🎯 Endpoints API
+
+- `GET /health` - Health check
+- `GET /init` - Initialiser conversation
+- `POST /chat` - Envoyer message
+- `POST /evaluate` - Évaluer dialogue complet (Maïeuthon)
+
+---
+
+## 📝 Structure Détaillée
+
+### Backend/
+
+Fichiers qui font tourner le serveur :
+- Notebooks Colab avec FastAPI + ngrok
+- Frontend HTML/JS
+
+### ML/
+
+Tout ce qui concerne la préparation du modèle :
+- Prompts système
+- Tests de prompts
+- Calibration de l'évaluateur
+- Dialogues de référence
+
+### docs/
+
+Documentation organisée par catégories :
+- `tutos/` - Guides pas à pas
+- `notes/` - Notes rapides
+- `references/` - Références techniques
+- `analyses/` - Analyses détaillées
+- `tests/` - Documentation des tests
+- `supports/` - Support technique
+- `logs/` - Logs et traces
+
+---
+
+**Dernière mise à jour :** 21 novembre 2025
+
