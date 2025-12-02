@@ -2,7 +2,7 @@ flask
 requests
 gunicorn
 pytest
-torch
+bitsandbytes
 accelerate
 peft
 transformers
