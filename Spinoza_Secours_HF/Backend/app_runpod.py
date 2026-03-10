@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Spinoza Secours API - FastAPI pour Vast.ai/RunPod
+Spinoza Secours - RunPod Serverless Handler
 Modèle : Mistral 7B + LoRA Fine-tuned
 """
 
@@ -9,13 +9,10 @@ import re
 import random
 import json
 import torch
-from typing import Dict, List, Optional
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator
+import runpod
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
-import uvicorn
+from sentence_transformers import SentenceTransformer, util
 
 # =============================================================================
 # CONFIGURATION
@@ -24,13 +21,9 @@ import uvicorn
 BASE_MODEL = "mistralai/Mistral-7B-Instruct-v0.2"
 ADAPTER_MODEL = "FJDaz/mistral-7b-philosophes-lora"
 HF_TOKEN = os.getenv("HF_TOKEN")
-PORT = int(os.getenv("PORT", "8000"))
 
-# Token optionnel : warning si absent mais ne bloque pas le démarrage
 if not HF_TOKEN:
-    print("⚠️ WARNING: HF_TOKEN environment variable not set. Model download may fail.")
-    print("⚠️ Set HF_TOKEN environment variable for Hugging Face model access.")
-    HF_TOKEN = None  # Permet de continuer, mais le téléchargement du modèle échouera
+    raise ValueError("HF_TOKEN environment variable is required")
 
 # =============================================================================
 # PROMPTS
@@ -149,46 +142,50 @@ QUESTIONS_BAC = [
 ]
 
 # =============================================================================
-# MODÈLE GLOBAL
+# INTENT ANCHORS — BERT Semantic Router
+# =============================================================================
+
+INTENT_ANCHORS = {
+    "accord":    ["oui", "je suis d'accord", "exactement", "tout à fait", "voilà", "c'est juste", "ok"],
+    "confusion": ["je comprends pas", "c'est quoi", "pourquoi", "je vois pas le rapport", "je sais pas", "c'est flou", "explique"],
+    "resistance":["non", "pas d'accord", "c'est faux", "n'importe quoi", "je refuse", "je peux pas", "c'est contradictoire"],
+    "neutre":    ["bonjour", "raconte-moi", "dis-moi", "alors", "et alors", "intéressant", "je t'écoute"],
+}
+
+# =============================================================================
+# MODÈLES GLOBAUX
 # =============================================================================
 
 model = None
 tokenizer = None
-conversation_history = []
+bert_model = None
+anchor_embeddings = {}
 
 # =============================================================================
 # FONCTIONS UTILITAIRES
 # =============================================================================
 
 def construire_prompt_complet(contexte: str, use_rag_instruction: bool = True) -> str:
-    """Construit le prompt complet optimisé"""
     prompt = SYSTEM_PROMPT_SPINOZA
-    
     if contexte in INSTRUCTIONS_CONTEXTUELLES:
         prompt += f"\n\n{INSTRUCTIONS_CONTEXTUELLES[contexte]}"
-    
     if use_rag_instruction:
         prompt += f"\n\n{INSTRUCTION_RAG}"
-    
     return prompt
 
 def detecter_contexte(user_input: str) -> str:
-    """Détecte le contexte de la réponse utilisateur"""
-    text_lower = user_input.lower()
-    
-    if any(word in text_lower for word in ['oui', "d'accord", 'exact', 'ok', 'voilà', 'tout à fait']):
-        return "accord"
-    
-    if any(phrase in text_lower for phrase in ['comprends pas', 'vois pas', "c'est quoi", 'je sais pas', 'pourquoi', 'rapport']):
-        return "confusion"
-    
-    if any(word in text_lower for word in ['mais', 'non', "pas d'accord", 'faux', "n'importe quoi", 'je peux']):
-        return "resistance"
-    
-    return "neutre"
+    if not bert_model or not anchor_embeddings:
+        return "neutre"
+    msg_emb = bert_model.encode(user_input, convert_to_tensor=True)
+    scores = {
+        intent: util.cos_sim(msg_emb, anchors).max().item()
+        for intent, anchors in anchor_embeddings.items()
+    }
+    intent = max(scores, key=scores.get)
+    print(f"[BERT Intent] '{user_input[:40]}' → {intent} | scores: { {k: round(v, 3) for k, v in scores.items()} }")
+    return intent
 
 def nettoyer_reponse(text: str) -> str:
-    """Nettoie la réponse générée"""
     text = re.sub(r'\([^)]*[Aa]ttends[^)]*\)', '', text)
     text = re.sub(r'\([^)]*[Pp]oursuis[^)]*\)', '', text)
     text = re.sub(r'\([^)]*[Dd]onne[^)]*\)', '', text)
@@ -198,7 +195,6 @@ def nettoyer_reponse(text: str) -> str:
     return text
 
 def limiter_phrases(text: str, max_phrases: int = 3) -> str:
-    """Limite le nombre de phrases"""
     phrases = re.split(r'[.!?]+\s+', text)
     phrases = [p.strip() for p in phrases if p.strip()]
     if len(phrases) <= max_phrases:
@@ -211,11 +207,10 @@ def limiter_phrases(text: str, max_phrases: int = 3) -> str:
 
 @torch.no_grad()
 def load_model():
-    """Charge le modèle Mistral 7B + LoRA"""
     global model, tokenizer
-    
+
     has_gpu = torch.cuda.is_available()
-    print(f"🖥️ GPU disponible: {has_gpu}")
+    print(f"GPU disponible: {has_gpu}")
 
     if has_gpu:
         quantization_config = BitsAndBytesConfig(
@@ -231,87 +226,57 @@ def load_model():
         device_map = "cpu"
         torch_dtype = torch.float32
 
-    print(f"🔄 Chargement Mistral 7B ({'4-bit GPU' if has_gpu else 'FP32 CPU'})...")
-
-    # Préparer les arguments avec token seulement si défini
-    model_kwargs = {
-        "quantization_config": quantization_config,
-        "device_map": device_map,
-        "torch_dtype": torch_dtype,
-        "trust_remote_code": True,
-        "low_cpu_mem_usage": True
-    }
-    if HF_TOKEN:
-        model_kwargs["token"] = HF_TOKEN
+    print(f"Chargement Mistral 7B ({'4-bit GPU' if has_gpu else 'FP32 CPU'})...")
 
     base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
-        **model_kwargs
+        quantization_config=quantization_config,
+        device_map=device_map,
+        torch_dtype=torch_dtype,
+        token=HF_TOKEN,
+        trust_remote_code=True,
+        low_cpu_mem_usage=True
     )
-
-    print("🔄 Chargement tokenizer...")
-
-    tokenizer_kwargs = {
-        "trust_remote_code": True
-    }
-    if HF_TOKEN:
-        tokenizer_kwargs["token"] = HF_TOKEN
 
     tokenizer = AutoTokenizer.from_pretrained(
         BASE_MODEL,
-        **tokenizer_kwargs
+        token=HF_TOKEN,
+        trust_remote_code=True
     )
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    print("🔄 Application LoRA Spinoza_Secours...")
-
-    lora_kwargs = {}
-    if HF_TOKEN:
-        lora_kwargs["token"] = HF_TOKEN
+    print("Application LoRA Spinoza_Secours...")
 
     model = PeftModel.from_pretrained(
         base_model,
         ADAPTER_MODEL,
-        **lora_kwargs
+        token=HF_TOKEN
     )
 
-    print("✅ Modèle Mistral 7B + LoRA chargé!")
-    return model, tokenizer
+    print("Modèle Mistral 7B + LoRA chargé!")
 
 # =============================================================================
-# FONCTION GÉNÉRATION
+# GÉNÉRATION
 # =============================================================================
 
-def spinoza_repond(message: str) -> str:
-    """Génère une réponse de Spinoza avec prompt hybride adaptatif"""
-    global conversation_history
-    
-    # Détecter contexte
+def spinoza_repond(message: str, conversation_history: list) -> tuple:
     contexte = detecter_contexte(message)
-    
-    # Construire prompt adaptatif
     system_prompt = construire_prompt_complet(contexte, use_rag_instruction=True)
-    
-    # Formatage Mistral style
+
     prompt_parts = [f"<s>[INST] {system_prompt}\n\n"]
-    
-    # Ajouter historique (4 derniers échanges max)
     for entry in conversation_history[-4:]:
         prompt_parts.append(f"{entry[0]} [/INST] {entry[1]}</s>[INST] ")
-    
     prompt_parts.append(f"{message} [/INST]")
     text = "".join(prompt_parts)
-    
-    # Tokenization
+
     inputs = tokenizer(text, return_tensors="pt").to(model.device)
     input_length = inputs['input_ids'].shape[1]
-    
-    # Génération
+
     device_type = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.bfloat16 if device_type == "cuda" else torch.float32
-    
+
     with torch.autocast(device_type=device_type, dtype=dtype):
         outputs = model.generate(
             **inputs,
@@ -323,217 +288,129 @@ def spinoza_repond(message: str) -> str:
             pad_token_id=tokenizer.pad_token_id,
             eos_token_id=tokenizer.eos_token_id
         )
-    
-    # Décodage
+
     new_tokens = outputs[0][input_length:]
     response = tokenizer.decode(new_tokens, skip_special_tokens=True)
-    
-    # Post-processing
     response = nettoyer_reponse(response)
     response = limiter_phrases(response, max_phrases=3)
-    
-    # Mettre à jour historique
+
     conversation_history.append([message, response])
-    
-    return response
+    return response, conversation_history
 
 def evaluer_dialogue(dialogue: str, score_front: int) -> dict:
-    """Évalue le dialogue complet et génère le message final"""
-    # 1. Évaluation (température basse pour JSON strict)
     prompt_eval = PROMPT_EVALUATION.format(dialogue=dialogue)
     prompt_eval_formatted = f"<s>[INST] {prompt_eval} [/INST]"
-    
+
     inputs = tokenizer(prompt_eval_formatted, return_tensors="pt").to(model.device)
     input_length = inputs['input_ids'].shape[1]
-    
+
     device_type = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.bfloat16 if device_type == "cuda" else torch.float32
-    
+
     with torch.autocast(device_type=device_type, dtype=dtype):
         outputs = model.generate(
             **inputs,
             max_new_tokens=150,
-            temperature=0.1,  # Basse température pour JSON strict
+            temperature=0.1,
             top_p=0.9,
             do_sample=True,
             repetition_penalty=1.2,
             pad_token_id=tokenizer.pad_token_id,
             eos_token_id=tokenizer.eos_token_id
         )
-    
+
     new_tokens = outputs[0][input_length:]
     reponse_eval = tokenizer.decode(new_tokens, skip_special_tokens=True)
-    
-    # Parser JSON
+
     details_model = None
     json_pattern = r'\{[^{}]*"comprehension"[^{}]*"cooperation"[^{}]*"progression"[^{}]*"total"[^{}]*\}'
     match = re.search(json_pattern, reponse_eval)
-    
     if match:
         try:
             details_model = json.loads(match.group(0))
         except json.JSONDecodeError:
             pass
-    
     if not details_model:
-        # Fallback si JSON non parsé
         details_model = {"comprehension": 5, "cooperation": 5, "progression": 5, "total": 15}
-    
-    # 2. Message final (température haute, créativité)
-    prompt_final = PROMPT_MESSAGE_FINAL
-    prompt_final_formatted = f"<s>[INST] {prompt_final} [/INST]"
-    
+
+    prompt_final_formatted = f"<s>[INST] {PROMPT_MESSAGE_FINAL} [/INST]"
     inputs_final = tokenizer(prompt_final_formatted, return_tensors="pt").to(model.device)
     input_length_final = inputs_final['input_ids'].shape[1]
-    
+
     with torch.autocast(device_type=device_type, dtype=dtype):
         outputs_final = model.generate(
             **inputs_final,
             max_new_tokens=150,
-            temperature=1.1,  # Haute température pour créativité
+            temperature=1.1,
             top_p=0.95,
             do_sample=True,
             repetition_penalty=1.2,
             pad_token_id=tokenizer.pad_token_id,
             eos_token_id=tokenizer.eos_token_id
         )
-    
+
     new_tokens_final = outputs_final[0][input_length_final:]
-    message_final = tokenizer.decode(new_tokens_final, skip_special_tokens=True)
-    message_final = message_final.strip()
+    message_final = tokenizer.decode(new_tokens_final, skip_special_tokens=True).strip()
     if message_final.startswith('"') and message_final.endswith('"'):
         message_final = message_final[1:-1]
-    
-    # 3. Score final
+
     score_backend = details_model.get("total", 15)
-    score_final = score_front + score_backend
-    
     return {
-        "score_final": score_final,
+        "score_final": score_front + score_backend,
         "message_final": message_final,
         "details_model": details_model
     }
 
 # =============================================================================
-# MODÈLES PYDANTIC
+# HANDLER RUNPOD SERVERLESS
 # =============================================================================
 
-class ChatRequest(BaseModel):
-    message: str
-    history: Optional[List[List[str]]] = None
-    
-    @field_validator('message')
-    @classmethod
-    def validate_message(cls, v: str) -> str:
-        if len(v) > 2000:
-            raise ValueError('Message trop long (max 2000 caractères)')
-        return v
+def handler(job):
+    try:
+        job_input = job["input"]
+        action = job_input.get("action", "chat")
 
-class ChatResponse(BaseModel):
-    reply: str
-    history: List[List[str]]
+        if action == "init":
+            question = random.choice(QUESTIONS_BAC)
+            greeting = f"Bonjour ! Je suis Spinoza. Discutons :\n\n**{question}**\n\nQu'en penses-tu ?"
+            return {"greeting": greeting, "history": [[None, greeting]]}
 
-class EvaluateRequest(BaseModel):
-    dialogue: str
-    score_front: int
+        elif action == "chat":
+            message = job_input.get("message", "")
+            if not message:
+                return {"error": "Le champ 'message' est requis pour action=chat"}
+            history = job_input.get("history", [])
+            reply, updated_history = spinoza_repond(message, history)
+            return {"reply": reply, "history": updated_history}
 
-class EvaluateResponse(BaseModel):
-    score_final: int
-    message_final: str
-    details_model: dict
+        elif action == "evaluate":
+            dialogue = job_input.get("dialogue", "")
+            score_front = job_input.get("score_front", 0)
+            if not dialogue:
+                return {"error": "Le champ 'dialogue' est requis pour action=evaluate"}
+            return evaluer_dialogue(dialogue, score_front)
 
-# =============================================================================
-# API FASTAPI
-# =============================================================================
+        else:
+            return {"error": f"Action inconnue : '{action}'. Actions valides : init, chat, evaluate"}
 
-app = FastAPI(title="Spinoza Secours API", version="1.0.0")
-
-# CORS - ⚠️ À restreindre en production
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # ⚠️ RESTREINDRE en production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.get("/")
-def root():
-    """Endpoint racine - Informations sur l'API"""
-    return {
-        "name": "Spinoza Secours API",
-        "model": "Mistral 7B + LoRA",
-        "status": "running",
-        "endpoints": {
-            "health": "GET /health",
-            "init": "GET /init",
-            "chat": "POST /chat",
-            "evaluate": "POST /evaluate"
-        }
-    }
-
-@app.get("/health")
-def health():
-    """Health check endpoint"""
-    return {
-        "status": "ok",
-        "model": "Mistral 7B + LoRA",
-        "gpu_available": torch.cuda.is_available()
-    }
-
-@app.get("/init")
-def init():
-    """Initialise une nouvelle conversation"""
-    global conversation_history
-    conversation_history = []
-    question = random.choice(QUESTIONS_BAC)
-    greeting = f"Bonjour ! Je suis Spinoza. Discutons :\n\n**{question}**\n\nQu'en penses-tu ?"
-    return {
-        "greeting": greeting,
-        "history": [[None, greeting]]
-    }
-
-@app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
-    """Endpoint de chat avec Spinoza"""
-    global conversation_history
-    
-    # Mettre à jour historique si fourni
-    if req.history:
-        conversation_history = req.history
-    
-    # Générer réponse
-    reply = spinoza_repond(req.message)
-    
-    return {
-        "reply": reply,
-        "history": conversation_history
-    }
-
-@app.post("/evaluate", response_model=EvaluateResponse)
-def evaluate(req: EvaluateRequest):
-    """Évalue le dialogue complet et génère le message final"""
-    result = evaluer_dialogue(req.dialogue, req.score_front)
-    return EvaluateResponse(**result)
+    except Exception as e:
+        return {"error": str(e)}
 
 # =============================================================================
 # DÉMARRAGE
 # =============================================================================
 
-if __name__ == "__main__":
-    print("🔄 Chargement du modèle...")
-    load_model()
-    print("🚀 Démarrage du serveur FastAPI sur le port", PORT)
-    print("📡 Endpoints disponibles:")
-    print("   - GET  /health")
-    print("   - GET  /init")
-    print("   - POST /chat")
-    print("   - POST /evaluate")
-    
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=PORT,
-        log_level="info"
-    )
+print("Chargement du modèle Mistral 7B + LoRA...")
+load_model()
 
+print("Chargement BERT Intent Router...")
+bert_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+anchor_embeddings = {
+    intent: bert_model.encode(phrases, convert_to_tensor=True)
+    for intent, phrases in INTENT_ANCHORS.items()
+}
+print("BERT Intent Router prêt.")
+
+print("Modèle prêt. Démarrage RunPod Serverless...")
+
+runpod.serverless.start({"handler": handler})
